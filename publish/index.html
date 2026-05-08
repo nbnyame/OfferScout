@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OfferScout - Smart Price Comparison</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+
+        .app {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 24px 20px 60px;
+        }
+
+        /* ── Store Badge ── */
+        .store-badge {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            display: none;
+        }
+        .store-badge.show { display: block; }
+        .store-badge-content {
+            background: #1e293b;
+            border: 2px solid;
+            border-radius: 12px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .store-badge-icon {
+            font-size: 1.5rem;
+        }
+        .store-badge-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .store-badge-label {
+            font-size: 0.7rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .store-badge-name {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #e2e8f0;
+        }
+        .change-store-btn {
+            background: #334155;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: #94a3b8;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-left: 8px;
+        }
+        .change-store-btn:hover {
+            background: #475569;
+            color: #e2e8f0;
+        }
+
+        /* ── Header ── */
+        header {
+            text-align: center;
+            padding: 32px 0 24px;
+        }
+        header h1 {
+            font-size: 2.4rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #38bdf8, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+        header p {
+            color: #94a3b8;
+            margin-top: 6px;
+            font-size: 1rem;
+        }
+
+        /* ── Search ── */
+        .search-bar {
+            display: flex;
+            gap: 10px;
+            margin: 28px 0 16px;
+        }
+        .search-bar input {
+            flex: 1;
+            padding: 14px 18px;
+            border-radius: 12px;
+            border: 2px solid #334155;
+            background: #1e293b;
+            color: #f1f5f9;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color .2s;
+        }
+        .search-bar input:focus { border-color: #818cf8; }
+        .search-bar input::placeholder { color: #64748b; }
+        .search-bar button {
+            padding: 0 28px;
+            border-radius: 12px;
+            border: none;
+            background: linear-gradient(135deg, #6366f1, #818cf8);
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity .2s;
+            white-space: nowrap;
+        }
+        .search-bar button:hover { opacity: .9; }
+        .search-bar button:disabled { opacity: .5; cursor: not-allowed; }
+
+        .hint {
+            text-align: center;
+            color: #64748b;
+            font-size: .85rem;
+            margin-bottom: 12px;
+        }
+
+        /* ── Loading ── */
+        .loading { display: none; text-align: center; padding: 48px 0; }
+        .loading.show { display: block; }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 4px solid #334155;
+            border-top-color: #818cf8;
+            border-radius: 50%;
+            animation: spin .8s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading p { color: #94a3b8; }
+
+        /* ── Empty state ── */
+        .empty {
+            text-align: center;
+            padding: 64px 0;
+            color: #475569;
+        }
+        .empty .icon { font-size: 3rem; margin-bottom: 12px; }
+
+        /* ── Stats ── */
+        .stats {
+            display: none;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .stats.show { display: grid; }
+        .stat-box {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-label { font-size: .75rem; text-transform: uppercase; color: #64748b; letter-spacing: .5px; margin-bottom: 4px; }
+        .stat-value { font-size: 1.5rem; font-weight: 700; }
+        .stat-value.avg { color: #38bdf8; }
+        .stat-value.low { color: #34d399; }
+        .stat-value.high { color: #f87171; }
+        .stat-value.count { color: #c084fc; }
+
+        /* ── Results ── */
+        .results-title {
+            display: none;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 14px;
+            color: #cbd5e1;
+        }
+        .results-title.show { display: block; }
+
+        .product-list { display: flex; flex-direction: column; gap: 10px; }
+
+        .product-card {
+            display: flex;
+            align-items: center;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 16px 20px;
+            transition: border-color .2s, transform .15s;
+        }
+        .product-card:hover { border-color: #475569; transform: translateY(-1px); }
+        .product-card.best { border-color: #34d399; }
+
+        .product-rank {
+            width: 32px; height: 32px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 8px;
+            background: #334155;
+            font-weight: 700;
+            font-size: .85rem;
+            color: #94a3b8;
+            margin-right: 16px;
+            flex-shrink: 0;
+        }
+        .product-card.best .product-rank { background: #065f46; color: #34d399; }
+
+        .product-info { flex: 1; min-width: 0; }
+        .product-title {
+            font-weight: 600;
+            font-size: .95rem;
+            color: #e2e8f0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .product-source {
+            font-size: .8rem;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        .product-price {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin: 0 20px;
+            white-space: nowrap;
+        }
+        .product-card.best .product-price { color: #34d399; }
+
+        .product-link {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid #475569;
+            background: transparent;
+            color: #94a3b8;
+            text-decoration: none;
+            font-size: .85rem;
+            font-weight: 500;
+            transition: all .2s;
+            white-space: nowrap;
+        }
+        .product-link:hover { background: #334155; color: #e2e8f0; }
+
+        .badge-best {
+            display: inline-block;
+            background: #065f46;
+            color: #34d399;
+            font-size: .7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 8px;
+            vertical-align: middle;
+            text-transform: uppercase;
+        }
+
+        /* ── No-results message ── */
+        .no-results {
+            display: none;
+            text-align: center;
+            padding: 40px 0;
+            color: #94a3b8;
+        }
+        .no-results.show { display: block; }
+        .no-results h3 { color: #e2e8f0; margin-bottom: 8px; }
+
+        /* ── Recalls ── */
+        .recalls-section {
+            display: none;
+            margin-bottom: 24px;
+        }
+        .recalls-section.show { display: block; }
+        .recalls-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        .recalls-header .icon { font-size: 1.3rem; }
+        .recalls-header.safe { color: #34d399; }
+        .recalls-header.warn { color: #f87171; }
+        .recall-card {
+            background: #1e293b;
+            border: 1px solid #7f1d1d;
+            border-radius: 12px;
+            padding: 14px 18px;
+            margin-bottom: 8px;
+        }
+        .recall-card .recall-title {
+            font-weight: 600;
+            color: #fca5a5;
+            font-size: .95rem;
+            margin-bottom: 4px;
+        }
+        .recall-card .recall-meta {
+            font-size: .8rem;
+            color: #94a3b8;
+            margin-bottom: 4px;
+        }
+        .recall-card .recall-hazard {
+            font-size: .85rem;
+            color: #f87171;
+        }
+        .recall-card .recall-link {
+            display: inline-block;
+            margin-top: 6px;
+            font-size: .8rem;
+            color: #818cf8;
+            text-decoration: none;
+        }
+        .recall-card .recall-link:hover { text-decoration: underline; }
+        .recall-safe-box {
+            background: #1e293b;
+            border: 1px solid #065f46;
+            border-radius: 12px;
+            padding: 14px 18px;
+            color: #34d399;
+            font-size: .9rem;
+        }
+
+        /* ── Footer ── */
+        footer {
+            text-align: center;
+            padding: 32px 0 0;
+            color: #475569;
+            font-size: .8rem;
+        }
+
+        /* ── Store Selection Screen ── */
+        .store-selection {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        .store-selection.show { display: block; }
+        .store-selection-content {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        .store-selection h2 {
+            text-align: center;
+            font-size: 2rem;
+            font-weight: 700;
+            color: #e2e8f0;
+            margin-bottom: 12px;
+        }
+        .store-selection p {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 1.1rem;
+            margin-bottom: 40px;
+        }
+        .store-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .store-option {
+            background: #1e293b;
+            border: 3px solid #334155;
+            border-radius: 16px;
+            padding: 40px 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .store-option:active {
+            transform: scale(0.97);
+        }
+        .store-option.selected {
+            border-color: currentColor;
+            box-shadow: 0 0 20px currentColor;
+        }
+        .store-option .store-icon {
+            font-size: 3.5rem;
+            margin-bottom: 16px;
+        }
+        .store-option .store-name {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .store-option .store-desc {
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+        .store-option.play-it-again { color: #3b82f6; }
+        .store-option.music-go-round { color: #8b5cf6; }
+        .store-option.platos-closet { color: #ec4899; }
+        .store-option.style-encore { color: #f59e0b; }
+        .store-option.once-upon-child { color: #10b981; }
+        .continue-btn {
+            display: block;
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 20px 40px;
+            border-radius: 12px;
+            border: none;
+            background: linear-gradient(135deg, #6366f1, #818cf8);
+            color: #fff;
+            font-size: 1.2rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity .2s;
+        }
+        .continue-btn:hover { opacity: .9; }
+        .continue-btn:disabled {
+            opacity: .3;
+            cursor: not-allowed;
+        }
+
+        /* ── Category Selection Screen ── */
+        .category-selection {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        .category-selection.show { display: block; }
+        .category-selection-content {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        .category-selection h2 {
+            text-align: center;
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #e2e8f0;
+            margin-bottom: 8px;
+        }
+        .category-selection p {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 1rem;
+            margin-bottom: 30px;
+        }
+        .category-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .category-option {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 3px solid;
+            border-radius: 16px;
+            padding: 32px 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            position: relative;
+            overflow: hidden;
+        }
+        .category-option::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .category-option:hover::before {
+            opacity: 1;
+        }
+        .category-option:active {
+            transform: scale(0.97);
+        }
+        .category-option .category-name {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #e2e8f0;
+            position: relative;
+            z-index: 1;
+            line-height: 1.4;
+        }
+        
+        /* Color variations for categories */
+        .category-option:nth-child(5n+1) { border-color: #3b82f6; }
+        .category-option:nth-child(5n+2) { border-color: #8b5cf6; }
+        .category-option:nth-child(5n+3) { border-color: #ec4899; }
+        .category-option:nth-child(5n+4) { border-color: #f59e0b; }
+        .category-option:nth-child(5n+5) { border-color: #10b981; }
+        
+        .category-option:nth-child(5n+1):hover { box-shadow: 0 0 20px rgba(59, 130, 246, 0.4); }
+        .category-option:nth-child(5n+2):hover { box-shadow: 0 0 20px rgba(139, 92, 246, 0.4); }
+        .category-option:nth-child(5n+3):hover { box-shadow: 0 0 20px rgba(236, 72, 153, 0.4); }
+        .category-option:nth-child(5n+4):hover { box-shadow: 0 0 20px rgba(245, 158, 11, 0.4); }
+        .category-option:nth-child(5n+5):hover { box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); }
+        .back-btn {
+            display: inline-block;
+            margin-bottom: 20px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid #475569;
+            background: #1e293b;
+            color: #94a3b8;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .back-btn:hover {
+            background: #334155;
+            color: #e2e8f0;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 640px) {
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .product-card { flex-wrap: wrap; gap: 10px; }
+            .product-price { margin: 0; }
+            .product-link { width: 100%; text-align: center; }
+            .store-grid { grid-template-columns: 1fr; }
+            .store-selection h2 { font-size: 1.6rem; }
+            .category-grid { grid-template-columns: 1fr; }
+            .category-selection h2 { font-size: 1.4rem; }
+            .store-badge {
+                top: 10px;
+                right: 10px;
+            }
+            .store-badge-content {
+                padding: 8px 12px;
+                gap: 8px;
+            }
+            .store-badge-icon { font-size: 1.2rem; }
+            .store-badge-name { font-size: 0.85rem; }
+            .change-store-btn { font-size: 0.7rem; padding: 6px 10px; }
+        }
+    </style>
+</head>
+<body>
+<!-- Store Badge -->
+<div class="store-badge" id="storeBadge">
+    <div class="store-badge-content" id="storeBadgeContent">
+        <div class="store-badge-icon" id="storeBadgeIcon"></div>
+        <div class="store-badge-text">
+            <div class="store-badge-label">Shopping at</div>
+            <div class="store-badge-name" id="storeBadgeName"></div>
+        </div>
+        <button class="change-store-btn" onclick="changeStore()">Change</button>
+    </div>
+</div>
+
+<!-- Store Selection Screen -->
+<div class="store-selection show" id="storeSelection">
+    <div class="store-selection-content">
+        <h2>Welcome to OfferScout!</h2>
+        <p>Select the stores you want to search:</p>
+        
+        <div class="store-grid">
+            <div class="store-option play-it-again" data-store="play-it-again-sports" onclick="toggleStore(this)">
+                <div class="store-icon">🏀</div>
+                <div class="store-name">Play It Again Sports</div>
+                <div class="store-desc">Sports & Fitness Equipment</div>
+            </div>
+            
+            <div class="store-option music-go-round" data-store="music-go-round" onclick="toggleStore(this)">
+                <div class="store-icon">🎸</div>
+                <div class="store-name">Music Go Round</div>
+                <div class="store-desc">Musical Instruments</div>
+            </div>
+            
+            <div class="store-option platos-closet" data-store="platos-closet" onclick="toggleStore(this)">
+                <div class="store-icon">👕</div>
+                <div class="store-name">Plato's Closet</div>
+                <div class="store-desc">Teen & Young Adult Clothing</div>
+            </div>
+            
+            <div class="store-option style-encore" data-store="style-encore" onclick="toggleStore(this)">
+                <div class="store-icon">👗</div>
+                <div class="store-name">Style Encore</div>
+                <div class="store-desc">Women's Clothing & Accessories</div>
+            </div>
+            
+            <div class="store-option once-upon-child" data-store="once-upon-child" onclick="toggleStore(this)">
+                <div class="store-icon">🧸</div>
+                <div class="store-name">Once Upon A Child</div>
+                <div class="store-desc">Children's Clothing & Toys</div>
+            </div>
+        </div>
+        
+    </div>
+</div>
+
+<!-- Category Selection Screen -->
+<div class="category-selection" id="categorySelection">
+    <div class="category-selection-content">
+        <button class="back-btn" onclick="backToStoreSelection()">← Back to Stores</button>
+        <h2 id="categoryTitle">Select a Category</h2>
+        <p id="categorySubtitle">Choose what you're looking for</p>
+        <div class="category-grid" id="categoryGrid"></div>
+    </div>
+</div>
+
+<div class="app">
+    <header>
+        <h1>OfferScout</h1>
+        <p>Compare real prices across major retailers</p>
+    </header>
+
+    <div class="search-bar">
+        <input type="text" id="q" placeholder="Search for a product (e.g. wireless mouse, air fryer, running shoes...)" autofocus>
+        <button id="searchBtn" onclick="doSearch()">Search</button>
+    </div>
+    <p class="hint">We search Amazon, eBay, Walmart, Target, Best Buy, Newegg and more to find the best price.</p>
+
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Searching retailers&hellip; this may take a few seconds.</p>
+    </div>
+
+    <div class="empty" id="empty">
+        <div class="icon">🔍</div>
+        <p>Enter a product above to compare prices</p>
+    </div>
+
+    <div class="no-results" id="noResults">
+        <h3>No results found</h3>
+        <p>No retailers returned results. Try a different search term.</p>
+    </div>
+
+    <div class="stats" id="stats">
+        <div class="stat-box">
+            <div class="stat-label">Average</div>
+            <div class="stat-value avg" id="sAvg">-</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Lowest</div>
+            <div class="stat-value low" id="sLow">-</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Highest</div>
+            <div class="stat-value high" id="sHigh">-</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Retailers</div>
+            <div class="stat-value count" id="sCount">-</div>
+        </div>
+    </div>
+
+    <div class="recalls-section" id="recallsSection">
+        <div class="recalls-header" id="recallsHeader"></div>
+        <div id="recallsList"></div>
+    </div>
+
+    <div class="results-title" id="resultsTitle"></div>
+    <div class="product-list" id="productList"></div>
+
+    <footer>OfferScout &middot; Searches 6+ retailers in real time &middot; Recall data from CPSC</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const qInput = $('q');
+let selectedStores = [];
+let selectedCategory = null;
+let currentStore = null;
+
+// Store data
+const storeData = {
+    'play-it-again-sports': { name: 'Play It Again Sports', icon: '🏀', color: '#3b82f6' },
+    'music-go-round': { name: 'Music Go Round', icon: '🎸', color: '#8b5cf6' },
+    'platos-closet': { name: "Plato's Closet", icon: '👕', color: '#ec4899' },
+    'style-encore': { name: 'Style Encore', icon: '👗', color: '#f59e0b' },
+    'once-upon-child': { name: 'Once Upon A Child', icon: '🧸', color: '#10b981' }
+};
+
+// Categories by store
+const storeCategories = {
+    'play-it-again-sports': [
+        'All Used Equipment',
+        'Baseball/Softball',
+        'Bicycles',
+        'Disc golf',
+        'Downhill skiing',
+        'Exercise equipment',
+        'Football',
+        'Goalie',
+        'Golf',
+        'Hockey',
+        'Lacrosse',
+        'Racquet sports',
+        'Skates',
+        'Snowboards',
+        'Soccer',
+        'Sticks'
+    ],
+    'once-upon-child': [
+        'Bathtubs, diaper pales and potty trainers',
+        'Bassinets- and wicker',
+        'Carriers- Front pack, sling, and backpack',
+        'Entertainers - Bouncers, jump ups, stationary, and walkers',
+        'Highchairs- Hook on, booster, and full size',
+        'Play yards- Pen and portable',
+        'Safety- Bed rails, gates, and monitors',
+        'Swings- Portable, battery, and wind-up',
+        'Strollers',
+        'Furniture- Changing table- Plastic/metal, wicker, and wood',
+        'Furniture- Chest- Combo, drawers, toy wood',
+        'Furniture Cradles- Plastic/Metal, Wicker, and Wood',
+        'Furniture Rocker/Glider',
+        'Furniture Toddler Bed- Plastic Themes, Plastic or Metal, Wood',
+        'Furniture Cribs'
+    ],
+    'music-go-round': [
+        'Band Instruments',
+        'Keyboards',
+        'Percussion',
+        'Pro Sound',
+        'Guitars'
+    ]
+};
+
+// Guitar subcategories
+const guitarSubcategories = [
+    'Acoustic',
+    'Bass Amps',
+    'Bass Guitars',
+    'Bass Speaker Cabinets',
+    'Electric Guitars',
+    'Guitar Effects',
+    'Guitar Speaker Cabinets',
+    'Solid State Guitar Amps',
+    'Tube Guitar Amps'
+];
+
+// Store selection functions
+function toggleStore(element) {
+    const store = element.dataset.store;
+    element.classList.add('selected');
+    selectedStores = [store];
+    currentStore = store;
+    
+    // Store selection in localStorage
+    localStorage.setItem('selectedStores', JSON.stringify(selectedStores));
+    console.log('Selected store:', store);
+    
+    // Update badge
+    updateStoreBadge(store);
+    
+    // Show category selection after brief delay
+    setTimeout(() => {
+        $('storeSelection').classList.remove('show');
+        showCategorySelection(store);
+    }, 300);
+}
+
+function updateStoreBadge(store) {
+    const data = storeData[store];
+    if (!data) return;
+    
+    $('storeBadgeIcon').textContent = data.icon;
+    $('storeBadgeName').textContent = data.name;
+    $('storeBadgeContent').style.borderColor = data.color;
+    $('storeBadge').classList.add('show');
+}
+
+function changeStore() {
+    $('storeSelection').classList.add('show');
+    $('categorySelection').classList.remove('show');
+    $('storeBadge').classList.remove('show');
+    localStorage.removeItem('selectedStores');
+    localStorage.removeItem('selectedCategory');
+    selectedStores = [];
+    selectedCategory = null;
+    currentStore = null;
+}
+
+function backToStoreSelection() {
+    $('categorySelection').classList.remove('show');
+    $('storeSelection').classList.add('show');
+    $('storeBadge').classList.remove('show');
+}
+
+// Category selection
+function showCategorySelection(store) {
+    const categories = storeCategories[store];
+    if (!categories) return;
+    
+    $('categoryTitle').textContent = `Select a Category`;
+    $('categorySubtitle').textContent = `What are you looking for at ${storeData[store].name}?`;
+    
+    const grid = $('categoryGrid');
+    grid.innerHTML = '';
+    
+    categories.forEach(category => {
+        const option = document.createElement('div');
+        option.className = 'category-option';
+        option.innerHTML = `<div class="category-name">${category}</div>`;
+        option.onclick = () => selectCategory(store, category);
+        grid.appendChild(option);
+    });
+    
+    $('categorySelection').classList.add('show');
+}
+
+function selectCategory(store, category) {
+    // Check if this is Guitars for Music Go Round
+    if (store === 'music-go-round' && category === 'Guitars') {
+        showGuitarSubcategories();
+        return;
+    }
+    
+    selectedCategory = category;
+    localStorage.setItem('selectedCategory', category);
+    console.log('Selected category:', category);
+    
+    // Proceed to search
+    $('categorySelection').classList.remove('show');
+}
+
+function showGuitarSubcategories() {
+    $('categoryTitle').textContent = 'Select Guitar Type';
+    $('categorySubtitle').textContent = 'Choose the type of guitar you\'re looking for';
+    
+    const grid = $('categoryGrid');
+    grid.innerHTML = '';
+    
+    guitarSubcategories.forEach(subcategory => {
+        const option = document.createElement('div');
+        option.className = 'category-option';
+        option.innerHTML = `<div class="category-name">${subcategory}</div>`;
+        option.onclick = () => selectGuitarSubcategory(subcategory);
+        grid.appendChild(option);
+    });
+}
+
+function selectGuitarSubcategory(subcategory) {
+    selectedCategory = `Guitars - ${subcategory}`;
+    localStorage.setItem('selectedCategory', selectedCategory);
+    console.log('Selected guitar subcategory:', selectedCategory);
+    
+    // Proceed to search
+    $('categorySelection').classList.remove('show');
+}
+
+// Check if user has already selected stores and categories
+window.addEventListener('DOMContentLoaded', () => {
+    const savedStore = localStorage.getItem('selectedStores');
+    const savedCategory = localStorage.getItem('selectedCategory');
+    
+    if (savedStore) {
+        selectedStores = JSON.parse(savedStore);
+        if (selectedStores.length > 0) {
+            currentStore = selectedStores[0];
+            $('storeSelection').classList.remove('show');
+            updateStoreBadge(currentStore);
+            
+            if (savedCategory) {
+                selectedCategory = savedCategory;
+                // Already have both selections, go to app
+            } else {
+                // Have store but no category, show category selection
+                showCategorySelection(currentStore);
+            }
+        }
+    }
+});
+
+qInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+async function doSearch() {
+    const query = qInput.value.trim();
+    if (!query) return;
+
+    // UI state
+    $('empty').style.display = 'none';
+    $('noResults').className = 'no-results';
+    $('stats').className = 'stats';
+    $('recallsSection').className = 'recalls-section';
+    $('resultsTitle').className = 'results-title';
+    $('productList').innerHTML = '';
+    $('loading').className = 'loading show';
+    $('searchBtn').disabled = true;
+
+    try {
+        const res = await fetch('/api/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        });
+        const data = await res.json();
+
+        $('loading').className = 'loading';
+        $('searchBtn').disabled = false;
+
+        if (!data.results || data.results.length === 0) {
+            $('noResults').className = 'no-results show';
+            return;
+        }
+
+        // Separate priced vs search-link results
+        const priced = data.results.filter(r => r.price !== null);
+        const links  = data.results.filter(r => r.price === null);
+
+        // Sort priced results lowest first
+        priced.sort((a, b) => a.price - b.price);
+        const sorted = [...priced, ...links];
+        const lowestPrice = priced.length ? priced[0].price : null;
+
+        // Stats
+        if (data.stats && data.stats.count) {
+            const s = data.stats;
+            $('sAvg').textContent = '$' + s.average.toFixed(2);
+            $('sLow').textContent = '$' + s.lowest.toFixed(2);
+            $('sHigh').textContent = '$' + s.highest.toFixed(2);
+            $('sCount').textContent = s.count;
+            $('stats').className = 'stats show';
+        }
+
+        // Title
+        $('resultsTitle').textContent = `Prices for "${query}" — sorted lowest to highest`;
+        $('resultsTitle').className = 'results-title show';
+
+        // Render cards
+        const list = $('productList');
+        sorted.forEach((item, i) => {
+            const hasPrice = item.price !== null;
+            const isBest = hasPrice && item.price === lowestPrice;
+            const card = document.createElement('div');
+            card.className = 'product-card' + (isBest ? ' best' : '');
+            card.innerHTML = `
+                <div class="product-rank">${i + 1}</div>
+                <div class="product-info">
+                    <div class="product-title">${esc(item.title)}${isBest ? '<span class="badge-best">Best Price</span>' : ''}</div>
+                    <div class="product-source">${esc(item.source)}</div>
+                </div>
+                <div class="product-price">${hasPrice ? '$' + item.price.toFixed(2) : 'See site'}</div>
+                <a class="product-link" href="${esc(item.url)}" target="_blank" rel="noopener">${hasPrice ? 'View Product →' : 'Search →'}</a>
+            `;
+            list.appendChild(card);
+        });
+
+        // Recalls
+        renderRecalls(data.recalls || [], query);
+
+    } catch (err) {
+        $('loading').className = 'loading';
+        $('searchBtn').disabled = false;
+        $('noResults').className = 'no-results show';
+        console.error(err);
+    }
+}
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+function renderRecalls(recalls, query) {
+    const section = $('recallsSection');
+    const header = $('recallsHeader');
+    const list = $('recallsList');
+    list.innerHTML = '';
+
+    if (!recalls || recalls.length === 0) {
+        header.className = 'recalls-header safe';
+        header.innerHTML = '<span class="icon">&#9989;</span> No recalls found for "' + esc(query) + '"';
+        list.innerHTML = '<div class="recall-safe-box">We checked the CPSC (Consumer Product Safety Commission) database and found no active recalls matching your search.</div>';
+    } else {
+        header.className = 'recalls-header warn';
+        header.innerHTML = '<span class="icon">&#9888;&#65039;</span> ' + recalls.length + ' recall(s) found for "' + esc(query) + '"';
+        recalls.forEach(r => {
+            const card = document.createElement('div');
+            card.className = 'recall-card';
+            card.innerHTML = `
+                <div class="recall-title">${esc(r.title)}</div>
+                <div class="recall-meta">${r.date ? 'Date: ' + esc(r.date) : ''}</div>
+                ${r.description ? '<div class="recall-meta">' + esc(r.description) + '</div>' : ''}
+                ${r.hazard ? '<div class="recall-hazard">Hazard: ' + esc(r.hazard) + '</div>' : ''}
+                ${r.url ? '<a class="recall-link" href="' + esc(r.url) + '" target="_blank" rel="noopener">View recall details \u2192</a>' : ''}
+            `;
+            list.appendChild(card);
+        });
+    }
+    section.className = 'recalls-section show';
+}
+
+// Heartbeat: tell server we're still alive every 5 seconds
+setInterval(() => {
+    fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+}, 5000);
+// Send first heartbeat immediately
+fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+</script>
+</body>
+</html>

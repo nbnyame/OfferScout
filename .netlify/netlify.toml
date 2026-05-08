@@ -1,0 +1,42 @@
+functionsDirectory = "C:\\Users\\nnyamekye\\CascadeProjects\\windsurf-project\\OfferScout\\netlify\\functions"
+functionsDirectoryOrigin = "config-v1"
+redirectsOrigin = "config"
+plugins = []
+headers = []
+
+[build]
+publish = "C:\\Users\\nnyamekye\\CascadeProjects\\windsurf-project\\OfferScout\\publish"
+publishOrigin = "config"
+base = "C:\\Users\\nnyamekye\\CascadeProjects\\windsurf-project\\OfferScout"
+functions = "C:\\Users\\nnyamekye\\CascadeProjects\\windsurf-project\\OfferScout\\netlify\\functions"
+
+[build.environment]
+
+[build.processing]
+
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]
+
+[functions]
+
+[functions."*"]
+node_bundler = "esbuild"
+
+[[redirects]]
+from = "/api/search"
+to = "/.netlify/functions/search"
+status = 200.0
+force = true
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]

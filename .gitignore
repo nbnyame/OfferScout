@@ -1,0 +1,26 @@
+# Build artifacts
+build/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+
+# Test files
+test_*.py
+inspect_*.py
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Env
+.env
+*.log
+
+# PyInstaller
+*.exe
