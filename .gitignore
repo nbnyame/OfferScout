@@ -18,9 +18,15 @@ inspect_*.py
 Thumbs.db
 .DS_Store
 
-# Env
+# Env / secrets
 .env
 *.log
+start_local.bat
+abacus_config.local.json
+
+# Node / Netlify
+node_modules/
+.netlify/
 
 # PyInstaller
 *.exe

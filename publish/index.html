@@ -127,6 +127,43 @@
         }
         .search-bar button:hover { opacity: .9; }
         .search-bar button:disabled { opacity: .5; cursor: not-allowed; }
+        .search-bar .photo-btn {
+            padding: 0 18px;
+            background: #1e293b;
+            border: 2px solid #334155;
+            font-size: 1.3rem;
+        }
+        .search-bar .photo-btn:hover { border-color: #818cf8; opacity: 1; }
+
+        /* ── Image preview ── */
+        .image-preview {
+            display: none;
+            align-items: center;
+            gap: 14px;
+            margin: 4px 0 12px;
+            padding: 12px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+        }
+        .image-preview.show { display: flex; }
+        .image-preview img {
+            width: 64px;
+            height: 64px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        .image-remove {
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: 1px solid #475569;
+            background: transparent;
+            color: #94a3b8;
+            font-size: .85rem;
+            cursor: pointer;
+            transition: all .2s;
+        }
+        .image-remove:hover { background: #334155; color: #e2e8f0; }
 
         .hint {
             text-align: center;
@@ -589,30 +626,6 @@
                 <div class="store-name">Play It Again Sports</div>
                 <div class="store-desc">Sports & Fitness Equipment</div>
             </div>
-            
-            <div class="store-option music-go-round" data-store="music-go-round" onclick="toggleStore(this)">
-                <div class="store-icon">🎸</div>
-                <div class="store-name">Music Go Round</div>
-                <div class="store-desc">Musical Instruments</div>
-            </div>
-            
-            <div class="store-option platos-closet" data-store="platos-closet" onclick="toggleStore(this)">
-                <div class="store-icon">👕</div>
-                <div class="store-name">Plato's Closet</div>
-                <div class="store-desc">Teen & Young Adult Clothing</div>
-            </div>
-            
-            <div class="store-option style-encore" data-store="style-encore" onclick="toggleStore(this)">
-                <div class="store-icon">👗</div>
-                <div class="store-name">Style Encore</div>
-                <div class="store-desc">Women's Clothing & Accessories</div>
-            </div>
-            
-            <div class="store-option once-upon-child" data-store="once-upon-child" onclick="toggleStore(this)">
-                <div class="store-icon">🧸</div>
-                <div class="store-name">Once Upon A Child</div>
-                <div class="store-desc">Children's Clothing & Toys</div>
-            </div>
         </div>
         
     </div>
@@ -635,14 +648,20 @@
     </header>
 
     <div class="search-bar">
-        <input type="text" id="q" placeholder="Search for a product (e.g. wireless mouse, air fryer, running shoes...)" autofocus>
+        <input type="text" id="q" placeholder="Describe a product, or tap the camera to use a photo..." autofocus>
+        <button id="photoBtn" class="photo-btn" onclick="document.getElementById('imageInput').click()" title="Search by photo">📷</button>
         <button id="searchBtn" onclick="doSearch()">Search</button>
     </div>
-    <p class="hint">We search Amazon, eBay, Walmart, Target, Best Buy, Newegg and more to find the best price.</p>
+    <input type="file" id="imageInput" accept="image/*" capture="environment" style="display:none" onchange="handleImageSelect(this)">
+    <div class="image-preview" id="imagePreview">
+        <img id="imagePreviewImg" alt="Selected product">
+        <button class="image-remove" onclick="clearImage()" title="Remove image">✕ Remove photo</button>
+    </div>
+    <p class="hint">AI-powered: describe a product or snap a photo, and we'll compare prices across retailers.</p>
 
     <div class="loading" id="loading">
         <div class="spinner"></div>
-        <p>Searching retailers&hellip; this may take a few seconds.</p>
+        <p>Asking AI to find &amp; compare prices&hellip; this usually takes 20&ndash;60 seconds (a little longer for photos).</p>
     </div>
 
     <div class="empty" id="empty">
@@ -774,10 +793,9 @@ function toggleStore(element) {
     // Update badge
     updateStoreBadge(store);
     
-    // Show category selection after brief delay
+    // Skip category selection — go straight to the search menu
     setTimeout(() => {
         $('storeSelection').classList.remove('show');
-        showCategorySelection(store);
     }, 300);
 }
 
@@ -884,20 +902,62 @@ window.addEventListener('DOMContentLoaded', () => {
             
             if (savedCategory) {
                 selectedCategory = savedCategory;
-                // Already have both selections, go to app
-            } else {
-                // Have store but no category, show category selection
-                showCategorySelection(currentStore);
             }
+            // Skip category selection — go straight to the search menu
         }
     }
 });
 
 qInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
 
+// ── Image search ──
+let selectedImage = null; // base64 string (no data: prefix)
+
+function handleImageSelect(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        const originalDataUrl = e.target.result;
+        const img = new Image();
+        img.onload = () => {
+            // Downscale large phone photos so the request body stays small.
+            // (Raw photos can be several MB of base64 and exceed serverless limits.)
+            const MAX = 1280;
+            let w = img.width, h = img.height;
+            if (w > MAX || h > MAX) {
+                if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
+                else { w = Math.round(w * MAX / h); h = MAX; }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            const jpeg = canvas.toDataURL('image/jpeg', 0.8);
+            selectedImage = jpeg.split(',')[1]; // strip "data:image/jpeg;base64,"
+            $('imagePreviewImg').src = jpeg;
+            $('imagePreview').className = 'image-preview show';
+        };
+        img.onerror = () => {
+            // Fallback: send the original if canvas processing fails.
+            selectedImage = originalDataUrl.split(',')[1];
+            $('imagePreviewImg').src = originalDataUrl;
+            $('imagePreview').className = 'image-preview show';
+        };
+        img.src = originalDataUrl;
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearImage() {
+    selectedImage = null;
+    $('imageInput').value = '';
+    $('imagePreview').className = 'image-preview';
+}
+
 async function doSearch() {
     const query = qInput.value.trim();
-    if (!query) return;
+    if (!query && !selectedImage) return;
 
     // UI state
     $('empty').style.display = 'none';
@@ -909,72 +969,140 @@ async function doSearch() {
     $('loading').className = 'loading show';
     $('searchBtn').disabled = true;
 
+    const jobId = makeJobId();
+    const payload = selectedImage ? { jobId, image: selectedImage } : { jobId, query };
+
     try {
         const res = await fetch('/api/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query })
+            body: JSON.stringify(payload)
         });
-        const data = await res.json();
 
-        $('loading').className = 'loading';
-        $('searchBtn').disabled = false;
+        // The local Flask backend replies synchronously with the full result.
+        // The Netlify background function replies with an empty 202 body, so we
+        // fall through to polling /api/result for the stored result.
+        let data = null;
+        try { data = await res.json(); } catch (e) { /* empty/202 body */ }
 
-        if (!data.results || data.results.length === 0) {
-            $('noResults').className = 'no-results show';
+        if (data && Array.isArray(data.results)) {
+            finishSearch(data);
             return;
         }
 
-        // Separate priced vs search-link results
-        const priced = data.results.filter(r => r.price !== null);
-        const links  = data.results.filter(r => r.price === null);
-
-        // Sort priced results lowest first
-        priced.sort((a, b) => a.price - b.price);
-        const sorted = [...priced, ...links];
-        const lowestPrice = priced.length ? priced[0].price : null;
-
-        // Stats
-        if (data.stats && data.stats.count) {
-            const s = data.stats;
-            $('sAvg').textContent = '$' + s.average.toFixed(2);
-            $('sLow').textContent = '$' + s.lowest.toFixed(2);
-            $('sHigh').textContent = '$' + s.highest.toFixed(2);
-            $('sCount').textContent = s.count;
-            $('stats').className = 'stats show';
-        }
-
-        // Title
-        $('resultsTitle').textContent = `Prices for "${query}" — sorted lowest to highest`;
-        $('resultsTitle').className = 'results-title show';
-
-        // Render cards
-        const list = $('productList');
-        sorted.forEach((item, i) => {
-            const hasPrice = item.price !== null;
-            const isBest = hasPrice && item.price === lowestPrice;
-            const card = document.createElement('div');
-            card.className = 'product-card' + (isBest ? ' best' : '');
-            card.innerHTML = `
-                <div class="product-rank">${i + 1}</div>
-                <div class="product-info">
-                    <div class="product-title">${esc(item.title)}${isBest ? '<span class="badge-best">Best Price</span>' : ''}</div>
-                    <div class="product-source">${esc(item.source)}</div>
-                </div>
-                <div class="product-price">${hasPrice ? '$' + item.price.toFixed(2) : 'See site'}</div>
-                <a class="product-link" href="${esc(item.url)}" target="_blank" rel="noopener">${hasPrice ? 'View Product →' : 'Search →'}</a>
-            `;
-            list.appendChild(card);
-        });
-
-        // Recalls
-        renderRecalls(data.recalls || [], query);
-
+        await pollForResult(jobId);
     } catch (err) {
-        $('loading').className = 'loading';
-        $('searchBtn').disabled = false;
-        $('noResults').className = 'no-results show';
         console.error(err);
+        searchFailed('network');
+    }
+}
+
+function makeJobId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return Date.now() + '-' + Math.random().toString(16).slice(2);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function pollForResult(jobId) {
+    const TIMEOUT_MS = 180000; // give the AI workflow up to 3 minutes (photos are slower)
+    const INTERVAL_MS = 2500;
+    const start = Date.now();
+
+    while (Date.now() - start < TIMEOUT_MS) {
+        await sleep(INTERVAL_MS);
+        let data = null;
+        try {
+            const r = await fetch('/api/result?jobId=' + encodeURIComponent(jobId));
+            data = await r.json();
+        } catch (e) { continue; }
+
+        if (!data || data.status === 'pending') continue;
+        if (data.status === 'error') { searchFailed('error'); return; }
+        finishSearch(data); // status === 'done'
+        return;
+    }
+    searchFailed('timeout');
+}
+
+function searchFailed(reason) {
+    $('loading').className = 'loading';
+    $('searchBtn').disabled = false;
+    let title = 'No results found';
+    let msg = 'No retailers returned results. Try a different search term.';
+    if (reason === 'timeout') {
+        title = 'This is taking a while';
+        msg = 'The search did not finish in time. Photo searches can take longer \u2014 please try again.';
+    } else if (reason === 'error') {
+        title = 'Something went wrong';
+        msg = 'The price service returned an error. Please try again in a moment.';
+    } else if (reason === 'network') {
+        title = 'Connection problem';
+        msg = 'Could not reach the price service. Check your connection and try again.';
+    }
+    const nr = $('noResults');
+    nr.innerHTML = '<h3>' + title + '</h3><p>' + msg + '</p>';
+    nr.className = 'no-results show';
+}
+
+function finishSearch(data) {
+    $('loading').className = 'loading';
+    $('searchBtn').disabled = false;
+
+    if (!data.results || data.results.length === 0) {
+        const nr = $('noResults');
+        nr.innerHTML = '<h3>No results found</h3><p>No retailers returned results. Try a different search term.</p>';
+        nr.className = 'no-results show';
+        return;
+    }
+
+    // Separate priced vs search-link results
+    const priced = data.results.filter(r => r.price !== null);
+    const links  = data.results.filter(r => r.price === null);
+
+    // Sort priced results lowest first
+    priced.sort((a, b) => a.price - b.price);
+    const sorted = [...priced, ...links];
+    const lowestPrice = priced.length ? priced[0].price : null;
+
+    // Stats
+    if (data.stats && data.stats.count) {
+        const s = data.stats;
+        $('sAvg').textContent = '$' + s.average.toFixed(2);
+        $('sLow').textContent = '$' + s.lowest.toFixed(2);
+        $('sHigh').textContent = '$' + s.highest.toFixed(2);
+        $('sCount').textContent = s.count;
+        $('stats').className = 'stats show';
+    }
+
+    // Title
+    const label = data.query || 'your product';
+    $('resultsTitle').textContent = `Prices for "${label}" — sorted lowest to highest`;
+    $('resultsTitle').className = 'results-title show';
+
+    // Render cards
+    const list = $('productList');
+    list.innerHTML = '';
+    sorted.forEach((item, i) => {
+        const hasPrice = item.price !== null;
+        const isBest = hasPrice && item.price === lowestPrice;
+        const card = document.createElement('div');
+        card.className = 'product-card' + (isBest ? ' best' : '');
+        card.innerHTML = `
+            <div class="product-rank">${i + 1}</div>
+            <div class="product-info">
+                <div class="product-title">${esc(item.title)}${isBest ? '<span class="badge-best">Best Price</span>' : ''}</div>
+                <div class="product-source">${esc(item.source)}</div>
+            </div>
+            <div class="product-price">${hasPrice ? '$' + item.price.toFixed(2) : 'See site'}</div>
+            <a class="product-link" href="${esc(item.url)}" target="_blank" rel="noopener">${hasPrice ? 'View Product →' : 'Search →'}</a>
+        `;
+        list.appendChild(card);
+    });
+
+    // Recalls (only render if the workflow returned any)
+    if (data.recalls && data.recalls.length) {
+        renderRecalls(data.recalls, label);
     }
 }
 

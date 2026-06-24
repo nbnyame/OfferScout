@@ -5,8 +5,5 @@
 [functions]
   node_bundler = "esbuild"
 
-[[redirects]]
-  from = "/api/search"
-  to = "/.netlify/functions/search"
-  status = 200
-  force = true
+# Routing for /api/search and /api/result is handled by each function's in-code
+# `config.path`, so no redirects are needed here.

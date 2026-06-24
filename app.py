@@ -9,8 +9,21 @@ import time
 import threading
 import os
 import sys
+import json
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# ──────────────────────────────────────────────
+# Abacus.AI workflow configuration (read from environment, never hardcoded)
+# ──────────────────────────────────────────────
+# The prediction endpoint is the org-specific public host (NOT api.abacus.ai,
+# which redirects to an internal cluster). Overridable via ABACUS_ENDPOINT.
+ABACUS_ENDPOINT = os.environ.get(
+    "ABACUS_ENDPOINT",
+    "https://winmarkcorporation.abacus.ai/api/v0/executeAgent",
+)
+ABACUS_DEPLOYMENT_ID = os.environ.get("ABACUS_DEPLOYMENT_ID")
+ABACUS_DEPLOYMENT_TOKEN = os.environ.get("ABACUS_DEPLOYMENT_TOKEN")
 
 # Resolve paths for both script and PyInstaller exe
 if getattr(sys, 'frozen', False):
@@ -354,32 +367,155 @@ def heartbeat():
     return jsonify({'status': 'ok'})
 
 
-@app.route('/api/search', methods=['POST'])
-def search():
-    data = request.get_json()
-    query = data.get('query', '').strip()
-    if not query:
-        return jsonify({'error': 'Please enter a search term'}), 400
+def _to_number(value):
+    """Best-effort parse of a price-like value into a float."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    m = re.search(r'[\d]+(\.\d+)?', str(value).replace(',', ''))
+    return float(m.group(0)) if m else None
 
-    results = search_all(query)
-    recalls = check_recalls(query)
 
-    prices = [r['price'] for r in results if r.get('price') is not None]
+def _parse_maybe_json(value):
+    """Some Abacus responses embed the agent JSON as a string; parse it if so."""
+    if isinstance(value, str):
+        t = value.strip()
+        if t.startswith('{') or t.startswith('['):
+            try:
+                return json.loads(t)
+            except ValueError:
+                pass
+    return value
+
+
+def _find_data_object(obj, depth=0):
+    """Recursively locate the object holding the comparison data (the one with a
+    `retailers` array or the summary fields)."""
+    obj = _parse_maybe_json(obj)
+    if obj is None or depth > 8:
+        return None
+    if isinstance(obj, list):
+        for el in obj:
+            found = _find_data_object(el, depth + 1)
+            if found is not None:
+                return found
+        return None
+    if isinstance(obj, dict):
+        if isinstance(obj.get('retailers'), list) or 'average_price' in obj or 'product_identified' in obj:
+            return obj
+        for value in obj.values():
+            found = _find_data_object(value, depth + 1)
+            if found is not None:
+                return found
+    return None
+
+
+def _pick(d, keys):
+    for k in keys:
+        if d.get(k) not in (None, ''):
+            return d[k]
+    return None
+
+
+def normalize_abacus(payload):
+    """Normalise an Abacus payload into (results, stats, product)."""
+    data = _find_data_object(payload) or {}
+    product = _pick(data, ['product_identified', 'product', 'product_name']) or ''
+    arr = data.get('retailers') if isinstance(data.get('retailers'), list) else \
+        (data.get('results') if isinstance(data.get('results'), list) else [])
+
+    results = []
+    for item in arr:
+        if not isinstance(item, dict):
+            continue
+        source = _pick(item, ['retailer_name', 'retailer', 'source', 'store', 'seller', 'site'])
+        price = _to_number(_pick(item, ['price', 'current_price', 'amount', 'value', 'cost']))
+        if price == 0:
+            price = None  # 0 means "price unavailable"
+        url = _pick(item, ['product_url', 'url', 'link', 'href'])
+        results.append({
+            'title': source or product or 'Retailer',
+            'price': price,
+            'url': url or '#',
+            'source': product or 'Offer',
+        })
+
+    prices = [r['price'] for r in results if r['price'] is not None]
     stats = {}
     if prices:
+        lowest_obj = data.get('lowest_price') or {}
+        highest_obj = data.get('highest_price') or {}
+        lowest = _to_number(lowest_obj.get('value')) if isinstance(lowest_obj, dict) else None
+        highest = _to_number(highest_obj.get('value')) if isinstance(highest_obj, dict) else None
+        average = _to_number(data.get('average_price'))
+        count = _to_number(data.get('total_retailers_found'))
         stats = {
-            'average': round(statistics.mean(prices), 2),
-            'lowest': round(min(prices), 2),
-            'highest': round(max(prices), 2),
+            'average': round(average if average is not None else statistics.mean(prices), 2),
+            'lowest': round(lowest if lowest is not None else min(prices), 2),
+            'highest': round(highest if highest is not None else max(prices), 2),
             'median': round(statistics.median(prices), 2),
-            'count': len(prices),
+            'count': int(count) if count is not None else len(prices),
         }
+    return results, stats, product
+
+
+def abacus_search(query=None, image=None, image_url=None):
+    """Call the Abacus.AI workflow and return the raw JSON payload."""
+    if not (ABACUS_DEPLOYMENT_ID and ABACUS_DEPLOYMENT_TOKEN):
+        raise RuntimeError('Missing Abacus.AI environment variables')
+
+    payload = {
+        'deploymentId': ABACUS_DEPLOYMENT_ID,
+        'deploymentToken': ABACUS_DEPLOYMENT_TOKEN,
+    }
+    if image:
+        # The workflow's price_comparison(product_description, product_image)
+        # accepts product_image as a plain base64 string. The server marks that
+        # field as a blob, so passing it in keywordArguments is rejected with
+        # "Invalid blob input data". Passing it POSITIONALLY bypasses that
+        # validation and routes straight into the function's base64 branch.
+        payload['arguments'] = [None, image]
+    else:
+        payload['keywordArguments'] = {'product_description': query}
+
+    resp = http_requests.post(
+        ABACUS_ENDPOINT,
+        headers={'Content-Type': 'application/json'},
+        json=payload,
+        timeout=120,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Abacus {resp.status_code}: {resp.text[:500]}")
+    return resp.json()
+
+
+@app.route('/api/search', methods=['POST'])
+def search():
+    data = request.get_json() or {}
+    query = (data.get('query') or '').strip()
+    image = data.get('image')
+    image_url = data.get('image_url')
+
+    if not query and not image and not image_url:
+        return jsonify({'error': 'Please enter a search term or upload an image'}), 400
+
+    if not (ABACUS_DEPLOYMENT_ID and ABACUS_DEPLOYMENT_TOKEN):
+        return jsonify({'error': 'Server is not configured. Missing Abacus.AI environment variables.'}), 500
+
+    try:
+        raw = abacus_search(query=query, image=image, image_url=image_url)
+    except Exception as e:
+        print(f"  Abacus.AI error: {e}")
+        return jsonify({'error': 'AI workflow request failed', 'detail': str(e)}), 502
+
+    results, stats, product = normalize_abacus(raw)
 
     return jsonify({
-        'query': query,
+        'query': query or product or 'your product',
         'results': results,
         'stats': stats,
-        'recalls': recalls,
+        'recalls': [],
     })
 
 
