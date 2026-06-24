@@ -1,0 +1,9 @@
+{
+  "name": "offerscout",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OfferScout - AI-powered price comparison (Netlify functions + static site)",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
