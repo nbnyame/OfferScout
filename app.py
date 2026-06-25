@@ -25,6 +25,10 @@ ABACUS_ENDPOINT = os.environ.get(
 ABACUS_DEPLOYMENT_ID = os.environ.get("ABACUS_DEPLOYMENT_ID")
 ABACUS_DEPLOYMENT_TOKEN = os.environ.get("ABACUS_DEPLOYMENT_TOKEN")
 
+# Management API host + key used to auto-start a stopped deployment.
+ABACUS_API_HOST = os.environ.get("ABACUS_API_HOST", "https://api.abacus.ai")
+ABACUS_API_KEY = os.environ.get("ABACUS_API_KEY")
+
 # Resolve paths for both script and PyInstaller exe
 if getattr(sys, 'frozen', False):
     BASE_DIR = sys._MEIPASS
@@ -460,8 +464,53 @@ def normalize_abacus(payload):
     return results, stats, product
 
 
+def _is_deployment_stopped(resp):
+    """Abacus returns HTTP 503 "DNS resolution failure" when the deployment is
+    STOPPED (auto-stopped after inactivity)."""
+    return resp.status_code == 503 and 'DNS resolution failure' in (resp.text or '')
+
+
+def _start_deployment_and_wait():
+    """Start the stopped deployment and poll until it reports ACTIVE.
+    Returns True if it became active within the timeout, else False."""
+    if not ABACUS_API_KEY:
+        return False
+
+    print("  Abacus deployment is stopped — sending startDeployment...")
+    try:
+        http_requests.post(
+            f"{ABACUS_API_HOST}/api/v0/startDeployment",
+            headers={'Content-Type': 'application/json', 'apiKey': ABACUS_API_KEY},
+            json={'deploymentId': ABACUS_DEPLOYMENT_ID},
+            timeout=30,
+        )
+    except Exception as e:
+        print(f"  startDeployment failed: {e}")
+        return False
+
+    # Poll up to ~3 minutes for the deployment to spin up.
+    for _ in range(30):
+        time.sleep(6)
+        try:
+            r = http_requests.get(
+                f"{ABACUS_API_HOST}/api/v0/describeDeployment",
+                headers={'apiKey': ABACUS_API_KEY},
+                params={'deploymentId': ABACUS_DEPLOYMENT_ID},
+                timeout=30,
+            )
+            status = (r.json().get('result') or {}).get('status')
+            if status == 'ACTIVE':
+                print("  Deployment is now ACTIVE.")
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def abacus_search(query=None, image=None, image_url=None):
-    """Call the Abacus.AI workflow and return the raw JSON payload."""
+    """Call the Abacus.AI workflow and return the raw JSON payload.
+
+    If the deployment is stopped, auto-start it and retry once."""
     if not (ABACUS_DEPLOYMENT_ID and ABACUS_DEPLOYMENT_TOKEN):
         raise RuntimeError('Missing Abacus.AI environment variables')
 
@@ -479,12 +528,23 @@ def abacus_search(query=None, image=None, image_url=None):
     else:
         payload['keywordArguments'] = {'product_description': query}
 
-    resp = http_requests.post(
-        ABACUS_ENDPOINT,
-        headers={'Content-Type': 'application/json'},
-        json=payload,
-        timeout=120,
-    )
+    def _post():
+        return http_requests.post(
+            ABACUS_ENDPOINT,
+            headers={'Content-Type': 'application/json'},
+            json=payload,
+            timeout=120,
+        )
+
+    resp = _post()
+    if _is_deployment_stopped(resp):
+        if _start_deployment_and_wait():
+            resp = _post()
+        else:
+            raise RuntimeError(
+                'The AI service was asleep and could not be woken in time. '
+                'Please try again in a minute.'
+            )
     if resp.status_code != 200:
         raise RuntimeError(f"Abacus {resp.status_code}: {resp.text[:500]}")
     return resp.json()

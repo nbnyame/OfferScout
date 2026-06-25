@@ -19,7 +19,70 @@ const ABACUS_ENDPOINT =
   process.env.ABACUS_ENDPOINT ||
   "https://winmarkcorporation.abacus.ai/api/v0/executeAgent";
 
+// Management API host used to start a stopped deployment. Requires ABACUS_API_KEY.
+const ABACUS_API_HOST = process.env.ABACUS_API_HOST || "https://api.abacus.ai";
+
 const JOB_STORE = "offerscout-jobs";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Abacus returns HTTP 503 with body "DNS resolution failure" when the
+// deployment is STOPPED (auto-stopped after inactivity). Detect that case.
+function isDeploymentStopped(status, text) {
+  return status === 503 && /DNS resolution failure/i.test(text || "");
+}
+
+// Start the deployment and poll describeDeployment until it reports ACTIVE.
+// Returns true if it became active within the timeout, false otherwise.
+async function startDeploymentAndWait(deploymentId) {
+  const apiKey = process.env.ABACUS_API_KEY;
+  if (!apiKey) return false;
+
+  await fetch(`${ABACUS_API_HOST}/api/v0/startDeployment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apiKey },
+    body: JSON.stringify({ deploymentId }),
+  }).catch(() => {});
+
+  // Poll up to ~3 minutes (background functions allow 15 min runtime).
+  for (let i = 0; i < 30; i++) {
+    await sleep(6000);
+    try {
+      const r = await fetch(
+        `${ABACUS_API_HOST}/api/v0/describeDeployment?deploymentId=${deploymentId}`,
+        { headers: { apiKey } }
+      );
+      const j = await r.json();
+      if (j && j.result && j.result.status === "ACTIVE") return true;
+    } catch {
+      /* keep polling */
+    }
+  }
+  return false;
+}
+
+// Call the Abacus prediction endpoint. If the deployment is stopped, start it,
+// wait for ACTIVE, then retry once.
+async function callAbacus(payload, deploymentId) {
+  const doFetch = () =>
+    fetch(ABACUS_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+  let res = await doFetch();
+  let text = await res.text();
+
+  if (isDeploymentStopped(res.status, text)) {
+    const active = await startDeploymentAndWait(deploymentId);
+    if (active) {
+      res = await doFetch();
+      text = await res.text();
+    }
+  }
+  return { res, text };
+}
 
 // ── Normalisation helpers ──────────────────────────────────────────────────
 
@@ -167,40 +230,25 @@ export default async (req) => {
     const query = (body.query || "").trim();
     const image = body.image || null;
 
-    let abacusRes;
-    if (image) {
-      // The workflow's price_comparison(product_description, product_image)
-      // accepts product_image as a plain base64 string. The server marks that
-      // field as a blob, so passing it in keywordArguments is rejected with
-      // "Invalid blob input data". Passing it POSITIONALLY bypasses that
-      // validation and routes straight into the function's base64 branch.
-      abacusRes = await fetch(ABACUS_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          deploymentId,
-          deploymentToken,
-          arguments: [null, image],
-        }),
-      });
-    } else {
-      abacusRes = await fetch(ABACUS_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          deploymentId,
-          deploymentToken,
-          keywordArguments: { product_description: query },
-        }),
-      });
-    }
+    // The workflow's price_comparison(product_description, product_image)
+    // accepts product_image as a plain base64 string. The server marks that
+    // field as a blob, so passing it in keywordArguments is rejected with
+    // "Invalid blob input data". Passing it POSITIONALLY bypasses that
+    // validation and routes straight into the function's base64 branch.
+    const payload = image
+      ? { deploymentId, deploymentToken, arguments: [null, image] }
+      : { deploymentId, deploymentToken, keywordArguments: { product_description: query } };
 
-    const bodyText = await abacusRes.text();
+    // callAbacus auto-starts the deployment if it is stopped, then retries.
+    const { res: abacusRes, text: bodyText } = await callAbacus(payload, deploymentId);
 
     if (!abacusRes.ok) {
+      const stopped = isDeploymentStopped(abacusRes.status, bodyText);
       await store.setJSON(jobId, {
         status: "error",
-        error: "AI workflow request failed",
+        error: stopped
+          ? "The AI service was asleep and could not be woken in time. Please try again in a minute."
+          : "AI workflow request failed",
         detail: `HTTP ${abacusRes.status}: ${bodyText.slice(0, 1200)}`,
         mode: image ? "image" : "text",
       });
